@@ -5,12 +5,40 @@ from scipy.io import wavfile
 
 # https://docs.python.org/3/library/wave.html#wave.Wave_read.close
 
-# Takes three arguments:
-# "filename"    - The name of the .WAV file to be parsed
-# "reduceBy"    - The reduction in sampling, equivelant to length / reduceBy
-# "maximum"     - The length of the desired output in seconds
-# "percentDiff" - The minimum percent difference between two samples to be
-#                 considered different
+# \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ #
+# audioParser.py                                                           #
+# Takes as an input a mono-channel, 44.1KHz .wav file and returns a "UDS"  #
+# file. A UDS file is a text file containing four characters, "B","U","D", #
+# and "S", which relate the current sample to the previous sample.         #
+#                                                                          #
+# To cut down on complexity, the program can also reduce the resolution of #
+# the audio file by instead opting to sample every "reduceBy" samples.     #
+# This cuts down on the total number of required comparisons, and may      #
+# yield more accurate results.                                             #
+# \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ #
+# Takes five arguments:                                                    #
+# "filename"    - The name of the .WAV file to be parsed. ".wav" is added  #
+#               - automatically.                                           #
+# "reduceBy"    - The reduction in sampling, equivelant to len / reduceBy  #
+#               - eg: reduceBy 16 = 1/16th the resolution of samples.      #
+# "percentDiff" - The minimum percent difference between two samples to be #
+#                 considered different                                     #
+# "maximum"     - The length of the desired output in seconds              #
+#               - I've just been using 15 seconds                          #
+# "method"      - Used to chose the PREV or AVG method in reduction.       #
+#               - Use 1 for the AVG method and anything other than 1 for   #
+#               - PREV.                                                    #
+# \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ #
+# Produces three output files:                                             #
+# "[SONG]_reduced_R#_M#.wav" - The reduced version of the song, cut to     #
+#                            - the selected length.                        #
+#                            - R=reducedBy, M=method (1:avg, 0:prev        #
+# "[SONG]_UDS_R#_M#_D#.txt"  - The UDS file with "U,D,S,B" characters.     #
+#                            - R=reducedBy, M=method, D=percentDiff        #
+# "[SONG]_UDS_R#_M#_D#.wav"  - A version of the song created using the UDS #
+#                            - information.                                #
+#                            - R=reducedBy, M=method, D=percentDiff        #
+# \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ #
 class audioParser:
     def __init__(self,filename,reduceBy,percentDiff,maximum,method):
         self.file = filename
@@ -37,14 +65,6 @@ class audioParser:
         self.writeWavFile()
         self.writeUDSwav()
 
-    # Reads the .WAV file and trims it to the maximum length
-    def readWavFile(self):
-        self.rate, dataWhole = wavfile.read(self.file+".wav")
-        numSamples = self.maxLen * 44100
-        for i in range(0,numSamples):
-            self.data.append(dataWhole[i])
-        print(".WAV file read. Rate = %d, Length = %d"%(self.rate,len(self.data)))
-
     # Produces the UDS file. UDS stands for "Up, Down, Same", and records
     # whether or not a given sample has a higher, lower, or equal value to
     # the previous sample to some percentage of difference. 
@@ -53,33 +73,28 @@ class audioParser:
         self.UDS.append("B")
         i = 0
         while i < len(self.dataReduced):
-            temp = self.dataReduced[i]
-            temp += 0.00001
-            perDiff = abs(((float(prevLevel) - float(temp)) / (float(temp)))*100)
+            curLevel = self.dataReduced[i]
+            curLevel += 0.00001
+            perDiff = abs(((float(prevLevel) - float(curLevel)) / (float(curLevel)))*100)
             if perDiff < self.minDiff:
                 self.UDS.append("S")
                 for x in range(0,self.reducer):
                     self.dataUDS.append(prevLevel)
-            elif prevLevel > temp:
+            elif prevLevel > curLevel:
                 self.UDS.append("D")
                 for x in range(0,self.reducer):
-                    self.dataUDS.append(temp)   
+                    self.dataUDS.append(curLevel)   
             else:
                 self.UDS.append("U")
                 for x in range(0,self.reducer):
-                    self.dataUDS.append(temp)
-            prevLevel = temp
+                    self.dataUDS.append(curLevel)
+            prevLevel = curLevel
             i+=self.reducer
         print("Projected: %d, Actual: %d"%((len(self.data)/self.reducer),len(self.UDS)))
         f = open(self.file+"_UDS_R%d_M%d_D%d.txt"%(self.reducer,self.reduceMethod,self.minDiff),"w")
         for i in range(0,len(self.UDS)):
             f.write(self.UDS[i])
         f.close()
-
-    # Writes a .WAV file with the UDS information
-    def writeUDSwav(self):
-        wavfile.write(self.file+"_UDS_R%d_M%d_D%d.wav"%(self.reducer,self.reduceMethod,self.minDiff),self.rate,np.asarray(self.dataUDS))
-        print("UDS .WAV file written")
             
     # Reduces the audio file's complexity by writing every self.reducer number
     # at each step
@@ -109,6 +124,19 @@ class audioParser:
             else:
                 avg += self.data[i]
         print(".WAV file reduced via 'Avg' mechanism")
+
+    # Reads the .WAV file and trims it to the maximum length
+    def readWavFile(self):
+        self.rate, dataWhole = wavfile.read(self.file+".wav")
+        numSamples = self.maxLen * 44100
+        for i in range(0,numSamples):
+            self.data.append(dataWhole[i])
+        print(".WAV file read. Rate = %d, Length = %d"%(self.rate,len(self.data)))
+
+    # Writes a .WAV file with the UDS information
+    def writeUDSwav(self):
+        wavfile.write(self.file+"_UDS_R%d_M%d_D%d.wav"%(self.reducer,self.reduceMethod,self.minDiff),self.rate,np.asarray(self.dataUDS))
+        print("UDS .WAV file written")
 
     # Write's the reduced .WAV file
     def writeWavFile(self):
