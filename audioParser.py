@@ -63,7 +63,7 @@ class audioParser:
             self.reduceWavFilePrev()
         self.produceUDSfile()
         self.writeWavFile()
-        self.writeUDSwav()
+        #self.writeUDSwav()
 
     # Produces the UDS file. UDS stands for "Up, Down, Same", and records
     # whether or not a given sample has a higher, lower, or equal value to
@@ -128,6 +128,7 @@ class audioParser:
     # Reads the .WAV file and trims it to the maximum length
     def readWavFile(self):
         self.rate, dataWhole = wavfile.read(self.file+".wav")
+        dataWhole = dataWhole
         numSamples = self.maxLen * 44100
         for i in range(0,numSamples):
             self.data.append(dataWhole[i])
